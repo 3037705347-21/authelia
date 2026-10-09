@@ -1301,8 +1301,10 @@ func (s *CLISuite) TestStorage07CacheMDS3() {
 	s.EqualError(err, "exit status 1")
 	s.Contains(output, "Error: error dumping metadata: no metadata is in the cache")
 
-	reUpdated := regexp.MustCompile(`^WebAuthn MDS3 cache data updated to version (\d+) and is due for update on ([A-Za-z]+ \d{1,2}, \d{4}).`)
+	reUpdated := regexp.MustCompile(`^WebAuthn MDS3 cache data updated to version (\d+) with generation (\d+) and is due for update on ([A-Za-z]+ \d{1,2}, \d{4}).`)
+	reUnchanged := regexp.MustCompile(`^WebAuthn MDS3 cache data with version (\d+) due for update on ([A-Za-z]+ \d{1,2}, \d{4}) is identical to the cached data and was not rewritten.`)
 	reAlreadyUpToDate := regexp.MustCompile(`^WebAuthn MDS3 cache data with version (\d+) due for update on ([A-Za-z]+ \d{1,2}, \d{4}) does not require an update.`)
+	reUpdatedOrUnchanged := regexp.MustCompile(`^WebAuthn MDS3 cache data (?:updated to version \d+ with generation \d+ and is due|with version \d+ due for update on [A-Za-z]+ \d{1,2}, \d{4} is identical)`)
 
 	var updateArgs []string
 
@@ -1324,7 +1326,8 @@ func (s *CLISuite) TestStorage07CacheMDS3() {
 	matches := reUpdated.FindStringSubmatch(output)
 
 	version := matches[1]
-	date := matches[2]
+	generation := matches[2]
+	date := matches[3]
 
 	output, err = s.ExecWithEnv("authelia-backend", append([]string{"authelia", "storage", "cache", "mds3", "update"}, updateArgs...), env)
 	s.NoError(err)
@@ -1332,13 +1335,15 @@ func (s *CLISuite) TestStorage07CacheMDS3() {
 	s.Contains(output, version)
 	s.Contains(output, date)
 
+	// Forcing an update with the same data must not rewrite the cache or create a new generation.
 	output, err = s.ExecWithEnv("authelia-backend", append([]string{"authelia", "storage", "cache", "mds3", "update", "-f"}, updateArgs...), env)
 	s.NoError(err)
-	s.Regexp(reUpdated, output)
+	s.Regexp(reUpdatedOrUnchanged, output)
+	s.Contains(output, version)
 
 	output, err = s.ExecWithEnv("authelia-backend", []string{"authelia", "storage", "cache", "mds3", "status"}, env)
 	s.NoError(err)
-	s.Contains(output, fmt.Sprintf("WebAuthn MDS3 Cache Status:\n\n\tValid: true\n\tInitialized: true\n\tOutdated: false\n\tVersion: %s\n\tNext Update: %s\n", version, date))
+	s.Contains(output, fmt.Sprintf("WebAuthn MDS3 Cache Status:\n\n\tValid: true\n\tInitialized: true\n\tOutdated: false\n\tVersion: %s\n\tNext Update: %s\n\tGeneration: %s\n", version, date, generation))
 
 	output, err = s.ExecWithEnv("authelia-backend", []string{"authelia", "storage", "cache", "mds3", "dump", "--path=" + filepath.Join(dir, "data.mds3")}, env)
 	s.NoError(err)
@@ -1350,7 +1355,8 @@ func (s *CLISuite) TestStorage07CacheMDS3() {
 
 	output, err = s.ExecWithEnv("authelia-backend", []string{"authelia", "storage", "cache", "mds3", "update", "--path=" + filepath.Join(dir, "data.mds3"), "-f"}, env)
 	s.NoError(err)
-	s.Regexp(reUpdated, output)
+	s.Regexp(reUnchanged, output)
+	s.Contains(output, version)
 
 	output, err = s.ExecWithEnv("authelia-backend", []string{"authelia", "storage", "cache", "mds3", "delete"}, env)
 	s.NoError(err)
@@ -1366,7 +1372,7 @@ func (s *CLISuite) TestStorage07CacheMDS3() {
 
 	output, err = s.ExecWithEnv("authelia-backend", []string{"authelia", "storage", "cache", "mds3", "status"}, env)
 	s.NoError(err)
-	s.Contains(output, fmt.Sprintf("WebAuthn MDS3 Cache Status:\n\n\tValid: true\n\tInitialized: true\n\tOutdated: false\n\tVersion: %s\n\tNext Update: %s\n", version, date))
+	s.Contains(output, fmt.Sprintf("WebAuthn MDS3 Cache Status:\n\n\tValid: true\n\tInitialized: true\n\tOutdated: false\n\tVersion: %s\n\tNext Update: %s\n\tGeneration: 1\n", version, date))
 
 	output, err = s.ExecWithEnv("authelia-backend", []string{"authelia", "storage", "cache", "mds3", "update"}, env)
 	s.NoError(err)

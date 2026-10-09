@@ -197,6 +197,47 @@ func TestRunStorageCacheDelete(t *testing.T) {
 	}
 }
 
+func TestRunStorageCacheMDS3Delete(t *testing.T) {
+	t.Run("ShouldDeleteWhenEnabled", func(t *testing.T) {
+		store := newTestSQLiteStore(t)
+
+		config := &schema.Configuration{
+			WebAuthn: schema.WebAuthn{
+				Metadata: schema.WebAuthnMetadata{
+					Enabled: true,
+				},
+			},
+		}
+
+		require.NoError(t, store.SaveCachedData(context.Background(), model.CachedData{Name: "mds3", Value: []byte("blob")}))
+		require.NoError(t, store.SaveCachedData(context.Background(), model.CachedData{Name: "mds3_generation", Value: []byte("{}")}))
+
+		buf := new(bytes.Buffer)
+
+		err := runStorageCacheMDS3Delete(context.Background(), buf, store, config)
+		assert.NoError(t, err)
+		assert.Equal(t, "Successfully deleted cached MDS3 data.\n", buf.String())
+
+		blob, err := store.LoadCachedData(context.Background(), "mds3")
+		require.NoError(t, err)
+		assert.Nil(t, blob)
+
+		record, err := store.LoadCachedData(context.Background(), "mds3_generation")
+		require.NoError(t, err)
+		assert.Nil(t, record)
+	})
+
+	t.Run("ShouldDeleteWhenDisabled", func(t *testing.T) {
+		store := newTestSQLiteStore(t)
+
+		buf := new(bytes.Buffer)
+
+		err := runStorageCacheMDS3Delete(context.Background(), buf, store, &schema.Configuration{})
+		assert.NoError(t, err)
+		assert.Equal(t, "Successfully deleted cached MDS3 data.\n", buf.String())
+	})
+}
+
 func TestRunStorageSchemaInfo(t *testing.T) {
 	t.Run("ShouldShowBasicInfo", func(t *testing.T) {
 		store := newTestSQLiteStore(t)
@@ -1460,6 +1501,12 @@ func TestRunStorageCacheMDS3Status(t *testing.T) {
 			false,
 			"webauthn metadata is disabled",
 			"",
+		},
+		{
+			"ShouldShowEmptyValidCache",
+			true,
+			"",
+			"WebAuthn MDS3 Cache Status:\n\n\tValid: true\n\tInitialized: false\n\tOutdated: false\n",
 		},
 	}
 

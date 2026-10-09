@@ -103,7 +103,7 @@ func newStorageCacheMDSDeleteCmd(ctx *CmdCtx) (cmd *cobra.Command) {
 		Long:              cmdAutheliaStorageCacheMDS3DeleteLong,
 		Example:           cmdAutheliaStorageCacheMDS3DeleteExample,
 		Args:              cobra.NoArgs,
-		RunE:              ctx.StorageCacheDeleteRunE("mds3", "MDS3"),
+		RunE:              ctx.StorageCacheMDS3DeleteRunE,
 		DisableAutoGenTag: true,
 	}
 

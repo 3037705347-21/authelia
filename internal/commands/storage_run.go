@@ -167,6 +167,41 @@ func runStorageCacheDelete(ctx context.Context, w io.Writer, store storage.Provi
 	return nil
 }
 
+// StorageCacheMDS3DeleteRunE is the RunE for the authelia storage cache mds3 delete command.
+func (ctx *CmdCtx) StorageCacheMDS3DeleteRunE(cmd *cobra.Command, args []string) (err error) {
+	defer func() {
+		if err := ctx.providers.StorageProvider.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
+	if err = ctx.CheckSchema(); err != nil {
+		return storageWrapCheckSchemaErr(err)
+	}
+
+	return runStorageCacheMDS3Delete(ctx, cmd.OutOrStdout(), ctx.providers.StorageProvider, ctx.config)
+}
+
+func runStorageCacheMDS3Delete(ctx context.Context, w io.Writer, store storage.Provider, config *schema.Configuration) (err error) {
+	var provider webauthn.MetaDataProvider
+
+	if provider, err = webauthn.NewMetaDataProvider(config, store); err != nil {
+		return err
+	}
+
+	if provider != nil {
+		if err = provider.DeleteCache(ctx); err != nil {
+			return err
+		}
+	} else if err = webauthn.DeleteMDS3Cache(ctx, store); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(w, "Successfully deleted cached MDS3 data.\n")
+
+	return nil
+}
+
 // StorageCacheMDS3StatusRunE is the RunE for the authelia storage cache mds3 status command.
 func (ctx *CmdCtx) StorageCacheMDS3StatusRunE(cmd *cobra.Command, args []string) (err error) {
 	defer func() {
@@ -196,6 +231,7 @@ func runStorageCacheMDS3Status(ctx context.Context, w io.Writer, store storage.P
 		mds *metadata.Metadata
 
 		valid, initialized, outdated bool
+		reason                       string
 	)
 
 	if mds, _, err = provider.LoadCache(ctx); err == nil {
@@ -205,6 +241,8 @@ func runStorageCacheMDS3Status(ctx context.Context, w io.Writer, store storage.P
 			initialized = true
 			outdated = provider.Outdated()
 		}
+	} else {
+		reason = err.Error()
 	}
 
 	_, _ = fmt.Fprintf(w, "WebAuthn MDS3 Cache Status:\n\n\tValid: %t\n\tInitialized: %t\n\tOutdated: %t\n", valid, initialized, outdated)
@@ -215,6 +253,12 @@ func runStorageCacheMDS3Status(ctx context.Context, w io.Writer, store storage.P
 		if !outdated {
 			_, _ = fmt.Fprintf(w, "\tNext Update: %s\n", mds.Parsed.NextUpdate.Format("January 2, 2006"))
 		}
+
+		if generation, ok := provider.Generation(); ok {
+			_, _ = fmt.Fprintf(w, "\tGeneration: %d\n\tLast Write: %s\n", generation.Generation, generation.WrittenAt.Format("January 2, 2006"))
+		}
+	} else if reason != "" {
+		_, _ = fmt.Fprintf(w, "\tReason: %s\n", reason)
 	}
 
 	return nil
@@ -320,6 +364,7 @@ func runStorageCacheMDS3Update(ctx context.Context, w io.Writer, store storage.P
 
 	var (
 		provider webauthn.MetaDataProvider
+		current  *metadata.Metadata
 		mds      *metadata.Metadata
 		data     []byte
 	)
@@ -328,10 +373,13 @@ func runStorageCacheMDS3Update(ctx context.Context, w io.Writer, store storage.P
 		return err
 	}
 
-	if mds, _, err = provider.LoadCache(ctx); err != nil {
-		return err
-	} else if mds != nil && !force && !provider.Outdated() {
-		_, _ = fmt.Fprintf(w, "WebAuthn MDS3 cache data with version %d due for update on %s does not require an update.\n", mds.Parsed.Number, mds.Parsed.NextUpdate.Format("January 2, 2006"))
+	var lerr error
+
+	if current, _, lerr = provider.LoadCache(ctx); lerr != nil {
+		// A corrupt cache must not prevent a valid update from replacing it.
+		_, _ = fmt.Fprintf(w, "The existing WebAuthn MDS3 cache failed verification (%v) and must be replaced.\n", lerr)
+	} else if current != nil && !force && !provider.Outdated() {
+		_, _ = fmt.Fprintf(w, "WebAuthn MDS3 cache data with version %d due for update on %s does not require an update.\n", current.Parsed.Number, current.Parsed.NextUpdate.Format("January 2, 2006"))
 
 		return nil
 	}
@@ -350,20 +398,40 @@ func runStorageCacheMDS3Update(ctx context.Context, w io.Writer, store storage.P
 	}
 
 	if data == nil {
+		if current != nil {
+			_, _ = fmt.Fprintf(w, "WebAuthn MDS3 cache data with version %d due for update on %s does not require an update.\n", current.Parsed.Number, current.Parsed.NextUpdate.Format("January 2, 2006"))
+
+			return nil
+		}
+
 		return fmt.Errorf("error updating metadata: no data was returned")
 	}
 
-	if provider.Outdated() && !force {
+	if mds.Parsed.NextUpdate.Before(time.Now()) && !force {
 		_, _ = fmt.Fprintf(w, "Provided WebAuthn MDS3 data with version %d was due for update on %s and can't be used.\n", mds.Parsed.Number, mds.Parsed.NextUpdate.Format("January 2, 2006"))
 
 		return fmt.Errorf("error updating metadata: the metadata is outdated")
 	}
 
-	if err = provider.SaveCache(ctx, data); err != nil {
+	var changed bool
+
+	if changed, err = provider.SaveCache(ctx, data); err != nil {
 		return err
 	}
 
-	_, _ = fmt.Fprintf(w, "WebAuthn MDS3 cache data updated to version %d and is due for update on %s.\n", mds.Parsed.Number, mds.Parsed.NextUpdate.Format("January 2, 2006"))
+	if !changed {
+		_, _ = fmt.Fprintf(w, "WebAuthn MDS3 cache data with version %d due for update on %s is identical to the cached data and was not rewritten.\n", mds.Parsed.Number, mds.Parsed.NextUpdate.Format("January 2, 2006"))
+
+		return nil
+	}
+
+	var generation int
+
+	if gen, ok := provider.Generation(); ok {
+		generation = gen.Generation
+	}
+
+	_, _ = fmt.Fprintf(w, "WebAuthn MDS3 cache data updated to version %d with generation %d and is due for update on %s.\n", mds.Parsed.Number, generation, mds.Parsed.NextUpdate.Format("January 2, 2006"))
 
 	return nil
 }
