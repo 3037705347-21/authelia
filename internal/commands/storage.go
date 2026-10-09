@@ -296,6 +296,7 @@ func newStorageBansCmd(ctx *CmdCtx) (cmd *cobra.Command) {
 	cmd.AddCommand(
 		newStorageBansUserCmd(ctx),
 		newStorageBansIPCmd(ctx),
+		newStorageBansReconcileCmd(ctx),
 	)
 
 	return cmd
@@ -395,6 +396,24 @@ func newStorageBansAddCmd(ctx *CmdCtx, use string) (cmd *cobra.Command) {
 	cmd.Flags().BoolP("permanent", "p", false, "makes the ban effectively permanent")
 	cmd.Flags().StringP("reason", "r", "", "includes a reason for the ban")
 	cmd.Flags().StringP("duration", "d", "1 day", "the duration for the ban")
+
+	return cmd
+}
+
+func newStorageBansReconcileCmd(ctx *CmdCtx) (cmd *cobra.Command) {
+	cmd = &cobra.Command{
+		Use:     "reconcile",
+		Short:   cmdAutheliaStorageBansReconcileShort,
+		Long:    cmdAutheliaStorageBansReconcileLong,
+		Example: cmdAutheliaStorageBansReconcileExample,
+		Args:    cobra.NoArgs,
+		RunE:    ctx.StorageBansReconcileRunE(),
+
+		DisableAutoGenTag: true,
+	}
+
+	cmd.Flags().StringP(cmdFlagNameFile, "f", "", "the path to the ban roster file to reconcile with")
+	cmd.Flags().Bool("dry-run", false, "computes and lists the changes without applying them")
 
 	return cmd
 }

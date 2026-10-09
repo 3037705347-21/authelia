@@ -262,6 +262,22 @@ This subcommand allows revoking %s bans in the regulation system.`
 
 	cmdAutheliaStorageBansRevokeExample = `authelia storage bans %s revoke --help`
 
+	cmdAutheliaStorageBansReconcileShort = "Reconciles user and ip bans with a roster file"
+
+	cmdAutheliaStorageBansReconcileLong = `Reconciles user and ip bans with a roster file.
+
+This subcommand performs a declarative reconciliation of the user and ip bans with the entries listed in the roster
+file. Entries listed in the roster are banned or have their ban renewed with the given expiry, entries which were
+previously managed using this subcommand but are removed from the roster are explicitly revoked, and bans originating
+from other sources such as automatic regulation are left untouched.
+
+The reconciliation is performed atomically; if any error occurs no changes are made. Running this subcommand multiple
+times with the same roster does not result in the bans oscillating.`
+
+	cmdAutheliaStorageBansReconcileExample = `authelia storage bans reconcile --file bans.yml
+authelia storage bans reconcile --file bans.yml --dry-run
+authelia storage bans reconcile --file bans.yml --config config.yml`
+
 	cmdAutheliaStorageUserShort = "Manages user settings"
 
 	cmdAutheliaStorageUserLong = `Manages user settings.

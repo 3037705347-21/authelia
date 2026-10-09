@@ -61,5 +61,6 @@ authelia storage bans --help
 
 * [authelia storage](authelia_storage.md)	 - Manage the Authelia storage
 * [authelia storage bans ip](authelia_storage_bans_ip.md)	 - Manages ip bans
+* [authelia storage bans reconcile](authelia_storage_bans_reconcile.md)	 - Reconciles user and ip bans with a roster file
 * [authelia storage bans user](authelia_storage_bans_user.md)	 - Manages user bans
 
