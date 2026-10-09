@@ -1741,6 +1741,92 @@ func runStorageUserTOTPImport(ctx context.Context, w io.Writer, store storage.Pr
 	return nil
 }
 
+// StorageUserTOTPRotateRunE is the RunE for the authelia storage user totp rotate command.
+func (ctx *CmdCtx) StorageUserTOTPRotateRunE(cmd *cobra.Command, args []string) (err error) {
+	defer func() {
+		if err := ctx.providers.StorageProvider.Close(); err != nil {
+			panic(err)
+		}
+	}()
+
+	if err = ctx.CheckSchema(); err != nil {
+		return storageWrapCheckSchemaErr(err)
+	}
+
+	return runStorageUserTOTPRotate(ctx, cmd.OutOrStdout(), ctx.providers.StorageProvider, args[0])
+}
+
+func runStorageUserTOTPRotate(ctx context.Context, w io.Writer, store storage.Provider, filename string) (err error) {
+	var (
+		stat os.FileInfo
+		data []byte
+	)
+
+	if stat, err = os.Stat(filename); err != nil {
+		return fmt.Errorf("must specify a filename that exists but '%s' had an error opening it: %w", filename, err)
+	}
+
+	if stat.IsDir() {
+		return fmt.Errorf("must specify a filename that exists but '%s' is a directory", filename)
+	}
+
+	if data, err = os.ReadFile(filename); err != nil {
+		return err
+	}
+
+	format := fileFormatFromName(filename)
+
+	imported := &model.TOTPConfigurationDataExport{}
+
+	if err = importFile(filename, data, imported); err != nil {
+		return err
+	}
+
+	var export model.TOTPConfigurationExport
+
+	if export, err = imported.ToExport(); err != nil {
+		return err
+	}
+
+	if len(export.TOTPConfigurations) == 0 {
+		return fmt.Errorf("can't rotate using a %s file without TOTP configuration data", format)
+	}
+
+	usernames := make(map[string]any, len(export.TOTPConfigurations))
+
+	for i := range export.TOTPConfigurations {
+		username := export.TOTPConfigurations[i].Username
+
+		if _, ok := usernames[username]; ok {
+			return fmt.Errorf("can't rotate using a %s file with multiple TOTP configurations for the same username but '%s' is listed more than once", format, username)
+		}
+
+		usernames[username] = nil
+	}
+
+	var rotated, skipped int
+
+	// Each user is reconciled in its own provider level transaction. Users already matching the roster are skipped
+	// which makes this operation idempotent and allows an interrupted execution to be resumed by re-running it.
+	for _, config := range export.TOTPConfigurations {
+		var changed bool
+
+		if changed, err = store.RotateTOTPConfiguration(ctx, config); err != nil {
+			return fmt.Errorf("error occurred rotating TOTP configuration for user '%s': %w", config.Username, err)
+		}
+
+		if changed {
+			rotated++
+		} else {
+			skipped++
+		}
+	}
+
+	_, _ = fmt.Fprintf(w, cliOutputFmtSuccessfulUserTOTPRotate, rotated, format, filename, skipped)
+
+	return nil
+}
+
 // StorageUserTOTPExportURIRunE is the RunE for the authelia storage user totp export uri command.
 func (ctx *CmdCtx) StorageUserTOTPExportURIRunE(cmd *cobra.Command, _ []string) (err error) {
 	defer func() {

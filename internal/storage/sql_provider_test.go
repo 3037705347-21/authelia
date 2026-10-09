@@ -234,6 +234,145 @@ func TestSQLProviderTOTPConfiguration(t *testing.T) {
 	})
 }
 
+func TestSQLProviderTOTPConfigurationRotation(t *testing.T) {
+	provider := newTestSQLiteProvider(t)
+	require.NoError(t, provider.StartupCheck())
+
+	ctx := context.Background()
+
+	oldConfig := model.TOTPConfiguration{
+		CreatedAt: time.Now().Add(-time.Hour).Truncate(time.Second),
+		Username:  "john",
+		Issuer:    "Authelia",
+		Algorithm: "SHA1",
+		Digits:    6,
+		Period:    30,
+		Secret:    []byte("JBSWY3DPEHPK3PXP"),
+	}
+
+	newConfig := model.TOTPConfiguration{
+		CreatedAt: time.Now().Truncate(time.Second),
+		Username:  "john",
+		Issuer:    "Authelia",
+		Algorithm: "SHA256",
+		Digits:    8,
+		Period:    30,
+		Secret:    []byte("KRSXG5BAOQ3CA6DB"),
+	}
+
+	t.Run("ShouldRotateConfigurationAndRetireHistoryAtomically", func(t *testing.T) {
+		require.NoError(t, provider.SaveTOTPConfiguration(ctx, oldConfig))
+		require.NoError(t, provider.UpdateTOTPConfigurationSignIn(ctx, mustLoadTOTPConfigurationID(t, ctx, provider, "john"), sql.NullTime{Time: time.Now().Truncate(time.Second), Valid: true}))
+
+		require.NoError(t, provider.SaveTOTPHistory(ctx, "john", 100))
+		require.NoError(t, provider.SaveTOTPHistory(ctx, "john", 200))
+
+		rotated, err := provider.RotateTOTPConfiguration(ctx, newConfig)
+
+		require.NoError(t, err)
+		assert.True(t, rotated)
+
+		loaded, err := provider.LoadTOTPConfiguration(ctx, "john")
+		require.NoError(t, err)
+		assert.Equal(t, newConfig.Secret, loaded.Secret)
+		assert.Equal(t, newConfig.Algorithm, loaded.Algorithm)
+		assert.Equal(t, newConfig.Digits, loaded.Digits)
+		assert.False(t, loaded.LastUsedAt.Valid, "the new configuration should not retain the old configuration last used information")
+
+		for _, step := range []uint64{100, 200} {
+			exists, err := provider.ExistsTOTPHistory(ctx, "john", step)
+			require.NoError(t, err)
+			assert.False(t, exists, "the old configuration used TOTP step history should have been retired")
+		}
+	})
+
+	t.Run("ShouldBeIdempotentAndPreservePostRotationHistory", func(t *testing.T) {
+		require.NoError(t, provider.SaveTOTPHistory(ctx, "john", 300))
+
+		rotated, err := provider.RotateTOTPConfiguration(ctx, newConfig)
+
+		require.NoError(t, err)
+		assert.False(t, rotated, "re-running the same roster should skip users already matching it")
+
+		exists, err := provider.ExistsTOTPHistory(ctx, "john", 300)
+		require.NoError(t, err)
+		assert.True(t, exists, "history recorded after the rotation should be preserved on subsequent runs")
+	})
+
+	t.Run("ShouldRotateWhenConfigurationParametersChange", func(t *testing.T) {
+		changed := newConfig
+		changed.Digits = 6
+
+		rotated, err := provider.RotateTOTPConfiguration(ctx, changed)
+
+		require.NoError(t, err)
+		assert.True(t, rotated)
+
+		loaded, err := provider.LoadTOTPConfiguration(ctx, "john")
+		require.NoError(t, err)
+		assert.Equal(t, uint32(6), loaded.Digits)
+
+		exists, err := provider.ExistsTOTPHistory(ctx, "john", 300)
+		require.NoError(t, err)
+		assert.False(t, exists)
+
+		// Restore the expected roster state for the remaining subtests.
+		rotated, err = provider.RotateTOTPConfiguration(ctx, newConfig)
+		require.NoError(t, err)
+		assert.True(t, rotated)
+	})
+
+	t.Run("ShouldEnrollAbsentUserAndClearOrphanHistory", func(t *testing.T) {
+		require.NoError(t, provider.SaveTOTPHistory(ctx, "ghost", 1))
+
+		config := newConfig
+		config.Username = "ghost"
+
+		rotated, err := provider.RotateTOTPConfiguration(ctx, config)
+
+		require.NoError(t, err)
+		assert.True(t, rotated)
+
+		loaded, err := provider.LoadTOTPConfiguration(ctx, "ghost")
+		require.NoError(t, err)
+		assert.Equal(t, config.Secret, loaded.Secret)
+
+		exists, err := provider.ExistsTOTPHistory(ctx, "ghost", 1)
+		require.NoError(t, err)
+		assert.False(t, exists)
+	})
+
+	t.Run("ShouldNotAffectUsersOutsideTheRoster", func(t *testing.T) {
+		bystander := oldConfig
+		bystander.Username = "bystander"
+
+		require.NoError(t, provider.SaveTOTPConfiguration(ctx, bystander))
+		require.NoError(t, provider.SaveTOTPHistory(ctx, "bystander", 900))
+
+		rotated, err := provider.RotateTOTPConfiguration(ctx, newConfig)
+
+		require.NoError(t, err)
+		assert.False(t, rotated)
+
+		loaded, err := provider.LoadTOTPConfiguration(ctx, "bystander")
+		require.NoError(t, err)
+		assert.Equal(t, bystander.Secret, loaded.Secret)
+
+		exists, err := provider.ExistsTOTPHistory(ctx, "bystander", 900)
+		require.NoError(t, err)
+		assert.True(t, exists, "users not listed in the roster should be untouched")
+	})
+}
+
+func mustLoadTOTPConfigurationID(t *testing.T, ctx context.Context, provider *SQLiteProvider, username string) int {
+	t.Helper()
+
+	config, err := provider.LoadTOTPConfiguration(ctx, username)
+	require.NoError(t, err)
+
+	return config.ID
+}
+
 func TestSQLProviderTransactions(t *testing.T) {
 	provider := newTestSQLiteProvider(t)
 	require.NoError(t, provider.StartupCheck())

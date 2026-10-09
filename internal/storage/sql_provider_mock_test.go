@@ -2641,3 +2641,134 @@ func TestSQLProviderSchemaMigrateApplySpecialWithoutMySQLUsesConn(t *testing.T) 
 func encryptForTesting(clearText, aad []byte) ([]byte, error) {
 	return storage.NewSQLProviderForTesting(nil).Encrypt(clearText, aad)
 }
+
+func TestSQLProviderRotateTOTPConfiguration(t *testing.T) {
+	config := model.TOTPConfiguration{
+		CreatedAt: time.Now().Truncate(time.Second),
+		Username:  "john",
+		Issuer:    "Authelia",
+		Algorithm: "SHA1",
+		Digits:    6,
+		Period:    30,
+		Secret:    []byte("KRSXG5BAOQ3CA6DB"),
+	}
+
+	aad := []byte("authelia:storage:totp_configurations:secret:john")
+
+	testCases := []struct {
+		name      string
+		setup     func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx)
+		rotated   bool
+		expectErr string
+	}{
+		{
+			name: "ShouldErrBeginTransaction",
+			setup: func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx) {
+				db.EXPECT().BeginTxx(gomock.Any(), gomock.Nil()).Return(nil, errors.New("begin failed"))
+			},
+			expectErr: "error beginning transaction to rotate TOTP configuration for user 'john': begin failed",
+		},
+		{
+			name: "ShouldErrLoadingAndRollback",
+			setup: func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx) {
+				db.EXPECT().BeginTxx(gomock.Any(), gomock.Nil()).Return(tx, nil)
+				tx.EXPECT().GetContext(gomock.Any(), gomock.Any(), gomock.Any(), "john").Return(errors.New("boom"))
+				tx.EXPECT().Rollback().Return(nil)
+			},
+			expectErr: "error rotating TOTP configuration for user 'john': error occurred loading the existing configuration: error selecting TOTP configuration for user 'john': boom",
+		},
+		{
+			name: "ShouldErrSavingAndRollback",
+			setup: func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx) {
+				db.EXPECT().BeginTxx(gomock.Any(), gomock.Nil()).Return(tx, nil)
+				tx.EXPECT().GetContext(gomock.Any(), gomock.Any(), gomock.Any(), "john").Return(sql.ErrNoRows)
+				tx.EXPECT().ExecContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("upsert failed"))
+				tx.EXPECT().Rollback().Return(nil)
+			},
+			expectErr: "error rotating TOTP configuration for user 'john': error occurred saving the configuration: error upserting TOTP configuration for user 'john': upsert failed",
+		},
+		{
+			name: "ShouldErrRetiringHistoryAndRollback",
+			setup: func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx) {
+				db.EXPECT().BeginTxx(gomock.Any(), gomock.Nil()).Return(tx, nil)
+				tx.EXPECT().GetContext(gomock.Any(), gomock.Any(), gomock.Any(), "john").Return(sql.ErrNoRows)
+				tx.EXPECT().ExecContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+				tx.EXPECT().ExecContext(gomock.Any(), gomock.Any(), "john").Return(nil, errors.New("delete failed"))
+				tx.EXPECT().Rollback().Return(nil)
+			},
+			expectErr: "error rotating TOTP configuration for user 'john': error occurred retiring the used TOTP step history: error deleting TOTP history for user 'john': delete failed",
+		},
+		{
+			name: "ShouldErrCommit",
+			setup: func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx) {
+				db.EXPECT().BeginTxx(gomock.Any(), gomock.Nil()).Return(tx, nil)
+				tx.EXPECT().GetContext(gomock.Any(), gomock.Any(), gomock.Any(), "john").Return(sql.ErrNoRows)
+				tx.EXPECT().ExecContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+				tx.EXPECT().ExecContext(gomock.Any(), gomock.Any(), "john").Return(nil, nil)
+				tx.EXPECT().Commit().Return(errors.New("commit failed"))
+			},
+			expectErr: "error committing transaction to rotate TOTP configuration for user 'john': commit failed",
+		},
+		{
+			name: "ShouldSucceedRotation",
+			setup: func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx) {
+				db.EXPECT().BeginTxx(gomock.Any(), gomock.Nil()).Return(tx, nil)
+				tx.EXPECT().GetContext(gomock.Any(), gomock.Any(), gomock.Any(), "john").Return(sql.ErrNoRows)
+				tx.EXPECT().ExecContext(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+				tx.EXPECT().ExecContext(gomock.Any(), gomock.Any(), "john").Return(nil, nil)
+				tx.EXPECT().Commit().Return(nil)
+			},
+			rotated: true,
+		},
+		{
+			name: "ShouldSkipWhenConfigurationMatchesWithoutWrites",
+			setup: func(t *testing.T, db *mocks.MockSQLXDB, tx *mocks.MockSQLXTx) {
+				encrypted, err := encryptForTesting(config.Secret, aad)
+				require.NoError(t, err)
+
+				db.EXPECT().BeginTxx(gomock.Any(), gomock.Nil()).Return(tx, nil)
+				tx.EXPECT().GetContext(gomock.Any(), gomock.Any(), gomock.Any(), "john").DoAndReturn(func(_ context.Context, dest any, _ string, _ any) error {
+					existing := dest.(*model.TOTPConfiguration)
+					existing.ID = 1
+					existing.CreatedAt = config.CreatedAt
+					existing.Username = config.Username
+					existing.Issuer = config.Issuer
+					existing.Algorithm = config.Algorithm
+					existing.Digits = config.Digits
+					existing.Period = config.Period
+					existing.Secret = encrypted
+
+					return nil
+				})
+				tx.EXPECT().Commit().Return(nil)
+			},
+			rotated: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			db := mocks.NewMockSQLXDB(ctrl)
+			tx := mocks.NewMockSQLXTx(ctrl)
+
+			if tc.setup != nil {
+				tc.setup(t, db, tx)
+			}
+
+			p := storage.NewSQLProviderForTesting(db)
+
+			rotated, err := p.RotateTOTPConfiguration(context.Background(), config)
+
+			assert.Equal(t, tc.rotated, rotated)
+
+			if tc.expectErr == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, tc.expectErr)
+			}
+		})
+	}
+}

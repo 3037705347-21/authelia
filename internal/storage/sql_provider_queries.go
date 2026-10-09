@@ -177,9 +177,13 @@ const (
 		VALUES (?, ?);`
 
 	queryFmtSelectTOTPHistory = `
-		SELECT COUNT(id)
-		FROM %s
-		WHERE username = ? AND step = ?;`
+	SELECT COUNT(id)
+	FROM %s
+	WHERE username = ? AND step = ?;`
+
+	queryFmtDeleteTOTPHistory = `
+	DELETE FROM %s
+	WHERE username = ?;`
 )
 
 //nolint:gosec // The following queries are not hard coded credentials.

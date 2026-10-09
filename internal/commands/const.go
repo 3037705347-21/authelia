@@ -12,6 +12,7 @@ import (
 const (
 	cliOutputFmtSuccessfulUserExportFile = "Successfully exported %d %s as %s to the '%s' file\n"
 	cliOutputFmtSuccessfulUserImportFile = "Successfully imported %d %s from the %s file '%s' into the database\n"
+	cliOutputFmtSuccessfulUserTOTPRotate = "Successfully rotated %d TOTP configurations from the %s file '%s' into the database (%d skipped as already up-to-date)\n"
 )
 
 const (
@@ -438,6 +439,21 @@ is read as TOML, '.json' as JSON, and anything else as YAML.`
 	cmdAutheliaStorageUserTOTPImportExample = `authelia storage user totp import authelia.export.totp.yml
 authelia storage user totp import --config config.yml authelia.export.totp.yml
 authelia storage user totp import --encryption-key b3453fde-ecc2-4a1f-9422-2707ddbed495 --postgres.address tcp://postgres:5432 --postgres.password autheliapw authelia.export.totp.yml`
+
+	cmdAutheliaStorageUserTOTPRotateShort = "Perform rotation of the TOTP configurations listed in a roster"
+
+	cmdAutheliaStorageUserTOTPRotateLong = `Perform rotation of the TOTP configurations listed in a roster.
+
+This subcommand allows reconciling the TOTP configurations in the database with the new configurations listed in the
+roster file. For each listed user the configuration is replaced and the used TOTP step history is retired in a single
+transaction so the new configuration starts with a clean replay window. Users not listed in the roster are not
+modified. Users whose stored configuration already matches the roster are skipped, which makes repeated executions
+idempotent and allows interrupted executions to be resumed. The format is determined by the extension of the file;
+'.toml' is read as TOML, '.json' as JSON, and anything else as YAML.`
+
+	cmdAutheliaStorageUserTOTPRotateExample = `authelia storage user totp rotate authelia.roster.totp.yml
+authelia storage user totp rotate --config config.yml authelia.roster.totp.yml
+authelia storage user totp rotate --encryption-key b3453fde-ecc2-4a1f-9422-2707ddbed495 --postgres.address tcp://postgres:5432 --postgres.password autheliapw authelia.roster.totp.yml`
 
 	cmdAutheliaStorageUserTOTPExportShort = "Perform exports of the TOTP configurations"
 

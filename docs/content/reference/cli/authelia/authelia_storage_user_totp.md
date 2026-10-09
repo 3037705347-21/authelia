@@ -64,4 +64,5 @@ authelia storage user totp --help
 * [authelia storage user totp export](authelia_storage_user_totp_export.md)	 - Perform exports of the TOTP configurations
 * [authelia storage user totp generate](authelia_storage_user_totp_generate.md)	 - Generate a TOTP configuration for a user
 * [authelia storage user totp import](authelia_storage_user_totp_import.md)	 - Perform imports of the TOTP configurations
+* [authelia storage user totp rotate](authelia_storage_user_totp_rotate.md)	 - Perform rotation of the TOTP configurations listed in a roster
 

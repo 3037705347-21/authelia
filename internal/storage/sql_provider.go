@@ -5,6 +5,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
@@ -111,6 +112,7 @@ func NewSQLProvider(config *schema.Configuration, name, driverName, dataSourceNa
 
 		sqlInsertTOTPHistory: fmt.Sprintf(queryFmtInsertTOTPHistory, tableTOTPHistory),
 		sqlSelectTOTPHistory: fmt.Sprintf(queryFmtSelectTOTPHistory, tableTOTPHistory),
+		sqlDeleteTOTPHistory: fmt.Sprintf(queryFmtDeleteTOTPHistory, tableTOTPHistory),
 
 		sqlInsertWebAuthnUser:         fmt.Sprintf(queryFmtInsertWebAuthnUser, tableWebAuthnUsers),
 		sqlSelectWebAuthnUser:         fmt.Sprintf(queryFmtSelectWebAuthnUser, tableWebAuthnUsers),
@@ -281,6 +283,7 @@ type SQLProvider struct {
 	// Table: totp_history.
 	sqlInsertTOTPHistory string
 	sqlSelectTOTPHistory string
+	sqlDeleteTOTPHistory string
 
 	// Table: webauthn_users.
 	sqlInsertWebAuthnUser         string
@@ -681,6 +684,82 @@ func (p *SQLProvider) ExistsTOTPHistory(ctx context.Context, username string, st
 	}
 
 	return count != 0, nil
+}
+
+// DeleteTOTPHistory deletes all TOTP history items from the storage provider for a given username.
+func (p *SQLProvider) DeleteTOTPHistory(ctx context.Context, username string) (err error) {
+	if _, err = p.conn(ctx).ExecContext(ctx, p.sqlDeleteTOTPHistory, username); err != nil {
+		return fmt.Errorf("error deleting TOTP history for user '%s': %w", username, err)
+	}
+
+	return nil
+}
+
+// RotateTOTPConfiguration atomically replaces a users TOTP configuration with the provided one and deletes the TOTP
+// history items for the username so the new configuration starts with a clean replay window. When the stored
+// configuration already represents the provided one no modifications are performed, allowing repeated reconciliation
+// runs to leave post-rotation history untouched.
+func (p *SQLProvider) RotateTOTPConfiguration(ctx context.Context, config model.TOTPConfiguration) (rotated bool, err error) {
+	var tx SQLXTx
+
+	if tx, err = p.db.BeginTxx(ctx, nil); err != nil {
+		return false, fmt.Errorf("error beginning transaction to rotate TOTP configuration for user '%s': %w", config.Username, err)
+	}
+
+	txc := context.WithValue(ctx, ctxKeyTransaction, tx)
+
+	rollback := func(stage string, cause error) (bool, error) {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return false, fmt.Errorf("error rolling back transaction to rotate TOTP configuration for user '%s': %w", config.Username, rollbackErr)
+		}
+
+		return false, fmt.Errorf("error rotating TOTP configuration for user '%s': error occurred %s: %w", config.Username, stage, cause)
+	}
+
+	existing, err := p.LoadTOTPConfiguration(txc, config.Username)
+	if err != nil && !errors.Is(err, ErrNoTOTPConfiguration) {
+		return rollback("loading the existing configuration", err)
+	}
+
+	if existing != nil && totpConfigurationsEqual(existing, &config) {
+		if err = tx.Commit(); err != nil {
+			return false, fmt.Errorf("error committing transaction to rotate TOTP configuration for user '%s': %w", config.Username, err)
+		}
+
+		return false, nil
+	}
+
+	// The new configuration has never been used: clear the last used information and ensure a creation time exists.
+	if config.CreatedAt.IsZero() {
+		config.CreatedAt = time.Now()
+	}
+
+	config.LastUsedAt = sql.NullTime{}
+
+	if err = p.SaveTOTPConfiguration(txc, config); err != nil {
+		return rollback("saving the configuration", err)
+	}
+
+	if err = p.DeleteTOTPHistory(txc, config.Username); err != nil {
+		return rollback("retiring the used TOTP step history", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return false, fmt.Errorf("error committing transaction to rotate TOTP configuration for user '%s': %w", config.Username, err)
+	}
+
+	return true, nil
+}
+
+// totpConfigurationsEqual returns true when both configurations represent the same TOTP key regardless of their
+// database identifiers or bookkeeping timestamps.
+func totpConfigurationsEqual(existing, desired *model.TOTPConfiguration) bool {
+	return existing.Username == desired.Username &&
+		existing.Issuer == desired.Issuer &&
+		existing.Algorithm == desired.Algorithm &&
+		existing.Digits == desired.Digits &&
+		existing.Period == desired.Period &&
+		bytes.Equal(existing.Secret, desired.Secret)
 }
 
 // LoadTOTPConfigurations load a set of TOTP configurations from the storage provider.

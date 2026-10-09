@@ -933,6 +933,191 @@ func TestRunStorageUserTOTPImport(t *testing.T) {
 	})
 }
 
+func TestRunStorageUserTOTPRotate(t *testing.T) {
+	testCases := []struct {
+		name  string
+		setup func(t *testing.T) string
+		err   string
+	}{
+		{
+			"ShouldErrFileNotFound",
+			func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "nonexistent.yml")
+			},
+			"must specify a filename that exists but",
+		},
+		{
+			"ShouldErrDirectory",
+			func(t *testing.T) string {
+				return t.TempDir()
+			},
+			"is a directory",
+		},
+		{
+			"ShouldErrEmptyRoster",
+			func(t *testing.T) string {
+				f := filepath.Join(t.TempDir(), "roster.yml")
+
+				require.NoError(t, os.WriteFile(f, []byte("{}"), 0600))
+
+				return f
+			},
+			"can't rotate using a YAML file without TOTP configuration data",
+		},
+		{
+			"ShouldErrDuplicateUsername",
+			func(t *testing.T) string {
+				f := filepath.Join(t.TempDir(), "roster.yml")
+
+				require.NoError(t, os.WriteFile(f, []byte(`totp_configurations:
+  - username: john
+    secret: YWJj
+  - username: john
+    secret: YWJj
+`), 0600))
+
+				return f
+			},
+			"is listed more than once",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newTestSQLiteStore(t)
+
+			buf := new(bytes.Buffer)
+
+			err := runStorageUserTOTPRotate(context.Background(), buf, store, tc.setup(t))
+
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, tc.err)
+		})
+	}
+
+	t.Run("ShouldRotateRosterAtomicallyAndIgnoreOtherUsers", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Build the roster from a source store containing the desired (new) configurations.
+		source := newTestSQLiteStore(t)
+
+		seedTOTPConfiguration(t, ctx, source, model.TOTPConfiguration{
+			CreatedAt: time.Now().Truncate(time.Second),
+			Username:  "john",
+			Issuer:    "Authelia",
+			Algorithm: "SHA256",
+			Digits:    8,
+			Period:    30,
+			Secret:    []byte("KRSXG5BAOQ3CA6DB"),
+		})
+		seedTOTPConfiguration(t, ctx, source, model.TOTPConfiguration{
+			CreatedAt: time.Now().Truncate(time.Second),
+			Username:  "bob",
+			Issuer:    "Authelia",
+			Algorithm: "SHA1",
+			Digits:    6,
+			Period:    30,
+			Secret:    []byte("ONZXE2LOMRPFA"),
+		})
+
+		rosterFile := filepath.Join(t.TempDir(), "roster.yml")
+
+		require.NoError(t, runStorageUserTOTPExport(ctx, new(bytes.Buffer), source, rosterFile))
+
+		// Prepare the target store with stale configurations and orphaned used step history.
+		target := newTestSQLiteStore(t)
+
+		seedTOTPConfig(t, ctx, target, "john")
+		seedTOTPConfig(t, ctx, target, "bob")
+		seedTOTPConfig(t, ctx, target, "carol")
+
+		require.NoError(t, target.SaveTOTPHistory(ctx, "john", 100))
+		require.NoError(t, target.SaveTOTPHistory(ctx, "bob", 200))
+		require.NoError(t, target.SaveTOTPHistory(ctx, "carol", 300))
+
+		buf := new(bytes.Buffer)
+
+		require.NoError(t, runStorageUserTOTPRotate(ctx, buf, target, rosterFile))
+		assert.Contains(t, buf.String(), "Successfully rotated 2 TOTP configurations")
+		assert.Contains(t, buf.String(), "0 skipped as already up-to-date")
+
+		john, err := target.LoadTOTPConfiguration(ctx, "john")
+		require.NoError(t, err)
+		assert.Equal(t, []byte("KRSXG5BAOQ3CA6DB"), john.Secret)
+		assert.False(t, john.LastUsedAt.Valid)
+
+		exists, err := target.ExistsTOTPHistory(ctx, "john", 100)
+		require.NoError(t, err)
+		assert.False(t, exists, "the rostered user old used steps should be retired")
+
+		exists, err = target.ExistsTOTPHistory(ctx, "bob", 200)
+		require.NoError(t, err)
+		assert.False(t, exists)
+
+		carol, err := target.LoadTOTPConfiguration(ctx, "carol")
+		require.NoError(t, err)
+		assert.Equal(t, []byte("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PX"), carol.Secret)
+
+		exists, err = target.ExistsTOTPHistory(ctx, "carol", 300)
+		require.NoError(t, err)
+		assert.True(t, exists, "users not listed in the roster should not be touched")
+	})
+
+	t.Run("ShouldBeIdempotentAndResumable", func(t *testing.T) {
+		ctx := context.Background()
+
+		source := newTestSQLiteStore(t)
+
+		seedTOTPConfiguration(t, ctx, source, model.TOTPConfiguration{
+			CreatedAt: time.Now().Truncate(time.Second),
+			Username:  "john",
+			Issuer:    "Authelia",
+			Algorithm: "SHA256",
+			Digits:    8,
+			Period:    30,
+			Secret:    []byte("KRSXG5BAOQ3CA6DB"),
+		})
+
+		rosterFile := filepath.Join(t.TempDir(), "roster.yml")
+
+		require.NoError(t, runStorageUserTOTPExport(ctx, new(bytes.Buffer), source, rosterFile))
+
+		target := newTestSQLiteStore(t)
+
+		seedTOTPConfig(t, ctx, target, "john")
+		require.NoError(t, target.SaveTOTPHistory(ctx, "john", 100))
+
+		buf := new(bytes.Buffer)
+
+		require.NoError(t, runStorageUserTOTPRotate(ctx, buf, target, rosterFile))
+		assert.Contains(t, buf.String(), "Successfully rotated 1 TOTP configurations")
+
+		// The user signs in with the new configuration recording a new used step.
+		require.NoError(t, target.SaveTOTPHistory(ctx, "john", 400))
+
+		// Re-running the same roster, as would happen when resuming an interrupted execution, changes nothing.
+		buf.Reset()
+
+		require.NoError(t, runStorageUserTOTPRotate(ctx, buf, target, rosterFile))
+		assert.Contains(t, buf.String(), "Successfully rotated 0 TOTP configurations")
+		assert.Contains(t, buf.String(), "1 skipped as already up-to-date")
+
+		exists, err := target.ExistsTOTPHistory(ctx, "john", 100)
+		require.NoError(t, err)
+		assert.False(t, exists, "old used steps should remain retired")
+
+		exists, err = target.ExistsTOTPHistory(ctx, "john", 400)
+		require.NoError(t, err)
+		assert.True(t, exists, "used steps recorded after the rotation should be preserved on re-runs")
+	})
+}
+
+func seedTOTPConfiguration(t *testing.T, ctx context.Context, store storage.Provider, config model.TOTPConfiguration) {
+	t.Helper()
+
+	require.NoError(t, store.SaveTOTPConfiguration(ctx, config))
+}
+
 func TestRunStorageUserIdentifiersExport(t *testing.T) {
 	testCases := []struct {
 		name  string

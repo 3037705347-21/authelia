@@ -69,6 +69,12 @@ type Provider interface {
 	// DeleteTOTPConfiguration delete a TOTP configuration from the storage provider given a username.
 	DeleteTOTPConfiguration(ctx context.Context, username string) (err error)
 
+	// RotateTOTPConfiguration atomically replaces a users TOTP configuration with the provided one and retires the
+	// used TOTP step history recorded for the username so the new configuration starts with a clean replay window.
+	// The returned rotated value is false when the existing configuration already matches the provided one, in
+	// which case neither the configuration nor the history is modified.
+	RotateTOTPConfiguration(ctx context.Context, config model.TOTPConfiguration) (rotated bool, err error)
+
 	// LoadTOTPConfiguration load a TOTP configuration given a username from the storage provider.
 	LoadTOTPConfiguration(ctx context.Context, username string) (config *model.TOTPConfiguration, err error)
 
@@ -84,6 +90,9 @@ type Provider interface {
 
 	// ExistsTOTPHistory checks if a TOTP history item exists in the storage provider.
 	ExistsTOTPHistory(ctx context.Context, username string, step uint64) (exists bool, err error)
+
+	// DeleteTOTPHistory deletes all TOTP history items from the storage provider for a given username.
+	DeleteTOTPHistory(ctx context.Context, username string) (err error)
 
 	/*
 		Implementation for User WebAuthn Information.

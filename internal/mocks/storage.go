@@ -218,6 +218,20 @@ func (mr *MockStorageMockRecorder) DeleteTOTPConfiguration(ctx, username any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteTOTPConfiguration", reflect.TypeOf((*MockStorage)(nil).DeleteTOTPConfiguration), ctx, username)
 }
 
+// DeleteTOTPHistory mocks base method.
+func (m *MockStorage) DeleteTOTPHistory(ctx context.Context, username string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteTOTPHistory", ctx, username)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteTOTPHistory indicates an expected call of DeleteTOTPHistory.
+func (mr *MockStorageMockRecorder) DeleteTOTPHistory(ctx, username any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteTOTPHistory", reflect.TypeOf((*MockStorage)(nil).DeleteTOTPHistory), ctx, username)
+}
+
 // DeleteWebAuthnCredential mocks base method.
 func (m *MockStorage) DeleteWebAuthnCredential(ctx context.Context, kid string) error {
 	m.ctrl.T.Helper()
@@ -926,6 +940,21 @@ func (m *MockStorage) Rollback(ctx context.Context) error {
 func (mr *MockStorageMockRecorder) Rollback(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rollback", reflect.TypeOf((*MockStorage)(nil).Rollback), ctx)
+}
+
+// RotateTOTPConfiguration mocks base method.
+func (m *MockStorage) RotateTOTPConfiguration(ctx context.Context, config model.TOTPConfiguration) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RotateTOTPConfiguration", ctx, config)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RotateTOTPConfiguration indicates an expected call of RotateTOTPConfiguration.
+func (mr *MockStorageMockRecorder) RotateTOTPConfiguration(ctx, config any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RotateTOTPConfiguration", reflect.TypeOf((*MockStorage)(nil).RotateTOTPConfiguration), ctx, config)
 }
 
 // SaveBannedIP mocks base method.

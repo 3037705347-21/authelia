@@ -631,6 +631,7 @@ func newStorageUserTOTPCmd(ctx *CmdCtx) (cmd *cobra.Command) {
 		newStorageUserTOTPDeleteCmd(ctx),
 		newStorageUserTOTPExportCmd(ctx),
 		newStorageUserTOTPImportCmd(ctx),
+		newStorageUserTOTPRotateCmd(ctx),
 	)
 
 	return cmd
@@ -682,6 +683,21 @@ func newStorageUserTOTPImportCmd(ctx *CmdCtx) (cmd *cobra.Command) {
 		Long:    cmdAutheliaStorageUserTOTPImportLong,
 		Example: cmdAutheliaStorageUserTOTPImportExample,
 		RunE:    ctx.StorageUserTOTPImportRunE,
+		Args:    cobra.ExactArgs(1),
+
+		DisableAutoGenTag: true,
+	}
+
+	return cmd
+}
+
+func newStorageUserTOTPRotateCmd(ctx *CmdCtx) (cmd *cobra.Command) {
+	cmd = &cobra.Command{
+		Use:     "rotate <filename>",
+		Short:   cmdAutheliaStorageUserTOTPRotateShort,
+		Long:    cmdAutheliaStorageUserTOTPRotateLong,
+		Example: cmdAutheliaStorageUserTOTPRotateExample,
+		RunE:    ctx.StorageUserTOTPRotateRunE,
 		Args:    cobra.ExactArgs(1),
 
 		DisableAutoGenTag: true,
