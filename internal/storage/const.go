@@ -35,8 +35,9 @@ const (
 	tableOAuth2PKCERequestSession   = "oauth2_pkce_request_session"
 	tableOAuth2RefreshTokenSession  = "oauth2_refresh_token_session" //nolint:gosec // This is not a hardcoded credential.
 
-	tableMigrations = "migrations"
-	tableEncryption = "encryption"
+	tableMigrations            = "migrations"
+	tableEncryption            = "encryption"
+	tableEncryptionKeyRotation = "encryption_key_rotation"
 )
 
 const (
@@ -130,6 +131,16 @@ const (
 	// schemaVersionEncryptionAADRowScoped is the schema version at which encrypted values became bound to their
 	// individual row. Databases below this version bind values to their table and column only.
 	schemaVersionEncryptionAADRowScoped = 26
+
+	// schemaVersionEncryptionKeyRotation is the schema version at which encryption key changes became resumable and
+	// record their per-table progress in the encryption_key_rotation table.
+	schemaVersionEncryptionKeyRotation = 30
+)
+
+const (
+	// rotationBatchSize is the number of rows re-encrypted in a single short transaction when resuming or performing
+	// an encryption key change.
+	rotationBatchSize = 100
 )
 
 var (

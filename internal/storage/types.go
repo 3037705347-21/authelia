@@ -128,6 +128,15 @@ type encEncryption struct {
 	Value []byte `db:"value"`
 }
 
+// encEncryptionKeyRotation is a per-table completion record for a resumable encryption key rotation.
+type encEncryptionKeyRotation struct {
+	KeyFingerprint string    `db:"key_fingerprint"`
+	Table          string    `db:"table_name"`
+	RowsTotal      int       `db:"rows_total"`
+	Checksum       string    `db:"checksum"`
+	CompletedAt    time.Time `db:"completed_at"`
+}
+
 type banExpiresExpired struct {
 	Expires sql.NullTime `db:"expires"`
 	Expired sql.NullTime `db:"expired"`

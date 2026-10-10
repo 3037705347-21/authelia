@@ -119,6 +119,13 @@ const (
 		SELECT id, signature, code
 		FROM %s;`
 
+	queryFmtSelectOTCEncryptedDataBatch = `
+		SELECT id, signature, code
+		FROM %s
+		WHERE id > ?
+		ORDER BY id
+		LIMIT ?;`
+
 	queryFmtUpdateOTCEncryptedData = `
 		UPDATE %s
 		SET code = ?
@@ -164,6 +171,13 @@ const (
 	queryFmtSelectTOTPConfigurationsEncryptedData = `
 		SELECT id, username, secret
 		FROM %s;`
+
+	queryFmtSelectTOTPConfigurationsEncryptedDataBatch = `
+		SELECT id, username, secret
+		FROM %s
+		WHERE id > ?
+		ORDER BY id
+		LIMIT ?;`
 
 	queryFmtUpdateTOTPConfigurationEncryptedData = `
 		UPDATE %s
@@ -237,6 +251,13 @@ const (
 	queryFmtSelectWebAuthnCredentialsEncryptedData = `
 		SELECT id, rpid, kid, public_key, attestation
 		FROM %s;`
+
+	queryFmtSelectWebAuthnCredentialsEncryptedDataBatch = `
+		SELECT id, rpid, kid, public_key, attestation
+		FROM %s
+		WHERE id > ?
+		ORDER BY id
+		LIMIT ?;`
 
 	queryFmtUpdateWebAuthnCredentialsEncryptedData = `
 		UPDATE %s
@@ -397,6 +418,13 @@ const (
 		FROM %s
 		WHERE encrypted = ?;`
 
+	queryFmtSelectCachedDataValueEncryptedBatch = `
+		SELECT id, name, value
+		FROM %s
+		WHERE encrypted = ? AND id > ?
+		ORDER BY id
+		LIMIT ?;`
+
 	queryFmtUpdateCachedDataEncryptedData = `
 		UPDATE %s
 		SET value = ?
@@ -427,10 +455,25 @@ const (
 		SELECT id, name, value
 		FROM %s;`
 
+	queryFmtSelectEncryptionEncryptedDataBatch = `
+		SELECT id, name, value
+		FROM %s
+		WHERE id > ?
+		ORDER BY id
+		LIMIT ?;`
+
 	queryFmtUpdateEncryptionEncryptedData = `
 		UPDATE %s
 		SET value = ?
 		WHERE id = ?;`
+
+	queryFmtSelectEncryptionKeyRotation = `
+		SELECT key_fingerprint, table_name, rows_total, checksum, completed_at
+		FROM %s;`
+
+	queryFmtInsertEncryptionKeyRotation = `
+		INSERT INTO %s (key_fingerprint, table_name, rows_total, checksum, completed_at)
+		VALUES (?, ?, ?, ?, ?);`
 )
 
 const (
@@ -639,6 +682,13 @@ const (
 	queryFmtSelectOAuth2SessionEncryptedData = `
 		SELECT id, signature, session_data
 		FROM %s;`
+
+	queryFmtSelectOAuth2SessionEncryptedDataBatch = `
+		SELECT id, signature, session_data
+		FROM %s
+		WHERE id > ?
+		ORDER BY id
+		LIMIT ?;`
 
 	queryFmtUpdateOAuth2ConsentSessionEncryptedData = `
 		UPDATE %s

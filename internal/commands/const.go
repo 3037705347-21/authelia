@@ -175,7 +175,9 @@ authelia storage encryption check --verbose --encryption-key b3453fde-ecc2-4a1f-
 
 	cmdAutheliaStorageEncryptionChangeKeyLong = `Changes the encryption key.
 
-This subcommand allows you to change the encryption key of an Authelia SQL database.`
+This subcommand allows you to change the encryption key of an Authelia SQL database.
+
+This subcommand can be safely re-run if it is interrupted. Re-running it with the same new encryption key resumes from the last fully completed table without leaving half-encrypted rows. The key related records are only switched after every data table has been re-encrypted, and a final verification confirms all values can be decrypted with the new key.`
 
 	cmdAutheliaStorageEncryptionChangeKeyExample = `authelia storage encryption change-key --config config.yml --new-encryption-key 0e95cb49-5804-4ad9-be82-bb04a9ddecd8
 authelia storage encryption change-key --encryption-key b3453fde-ecc2-4a1f-9422-2707ddbed495 --new-encryption-key 0e95cb49-5804-4ad9-be82-bb04a9ddecd8 --postgres.address tcp://postgres:5432 --postgres.password autheliapw`

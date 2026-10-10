@@ -92,6 +92,22 @@ func (p *SQLProvider) SchemaEncryptionChangeKey(ctx context.Context, rawKey stri
 
 	aad := aadForSchemaVersion(version)
 
+	if version < schemaVersionEncryptionKeyRotation {
+		err = p.schemaEncryptionChangeKeyLegacy(ctx, key, aad)
+	} else {
+		err = p.schemaEncryptionChangeKeyResumable(ctx, key, aad)
+	}
+
+	if err != nil {
+		return fmt.Errorf("error changing the storage encryption key: %w", err)
+	}
+
+	return nil
+}
+
+// schemaEncryptionChangeKeyLegacy re-encrypts every value in a single transaction. This is used for schemas older
+// than the resumable rotation support which don't have the rotation ledger table.
+func (p *SQLProvider) schemaEncryptionChangeKeyLegacy(ctx context.Context, key []byte, aad EncryptionAAD) (err error) {
 	var tx SQLXTx
 
 	if tx, err = p.db.Beginx(); err != nil {
@@ -103,7 +119,7 @@ func (p *SQLProvider) SchemaEncryptionChangeKey(ctx context.Context, rawKey stri
 			return fmt.Errorf("error rolling back transaction to change encryption key: %w", rollbackErr)
 		}
 
-		return fmt.Errorf("error changing the storage encryption key: %w", err)
+		return err
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -560,13 +576,18 @@ func schemaEncryptionCheckKeyCachedData(ctx context.Context, provider *SQLProvid
 	var cache encCachedData
 
 	for rows.Next() {
-		result.Total++
-
 		if err = rows.StructScan(&cache); err != nil {
 			_ = rows.Close()
 
 			return tableCachedData, EncryptionValidationTableResult{Error: fmt.Errorf("error scanning cached data to struct: %w", err)}
 		}
+
+		// Empty encrypted values carry no plaintext and are skipped by the encryption and rotation routines as well.
+		if len(cache.Value) == 0 {
+			continue
+		}
+
+		result.Total++
 
 		if _, err = utils.Decrypt(cache.Value, aad.Get(tableCachedData, columnValue, cache.Name), provider.keys.encryption); err != nil {
 			result.Invalid++

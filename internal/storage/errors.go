@@ -48,6 +48,14 @@ var (
 	// the database but the key doesn't appear to be valid.
 	ErrSchemaEncryptionInvalidKey = errors.New("the configured encryption key does not appear to be valid for this database which may occur if the encryption key was changed in the configuration without using the cli to change it in the database")
 
+	// ErrSchemaEncryptionRotationInProgress is returned when an interrupted encryption key rotation to a different
+	// new key has recorded progress and prevents a new rotation from starting.
+	ErrSchemaEncryptionRotationInProgress = errors.New("an interrupted encryption key rotation to a different new key is in progress; re-run this command with the same new key to resume it")
+
+	// ErrSchemaEncryptionRotationVerification is returned when the post rotation verification scanning the tables
+	// with the new key fails, including checksum mismatches.
+	ErrSchemaEncryptionRotationVerification = errors.New("error verifying the encryption key rotation: the data can't be validated with the new encryption key")
+
 	// ErrNoRowsAffected is returned when a query which should affect rows affects none.
 	ErrNoRowsAffected = errors.New("no rows affected")
 
@@ -76,6 +84,12 @@ const (
 	logFmtErrClosingConn    = "Error occurred closing SQL connection: %v"
 
 	logFmtEncryptionChangeKeyTableComplete = "Finished re-encrypting %d row(s) in table '%s'"
+
+	logFmtEncryptionRotationTableSkip     = "Skipping table '%s' which was already re-encrypted with the new encryption key (%d row(s))"
+	logFmtEncryptionRotationTableProgress = "Re-encrypted %d of %d row(s) in table '%s' with the new encryption key"
+	logFmtEncryptionRotationFinalize      = "Re-encrypting the encryption key records last now that all data tables are complete"
+	logFmtEncryptionRotationResume        = "Resuming interrupted encryption key rotation: %d of %d table(s) are already complete"
+	logFmtEncryptionRotationComplete      = "Encryption key rotation complete and verified for %d table(s)"
 )
 
 const (
