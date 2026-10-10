@@ -51,7 +51,13 @@ func migrationSpecialUp24(ctx context.Context, conn SQLXConnection, provider *SQ
 	limit := 100
 
 	for page := 0; true; page++ {
-		if credentials, err = provider.LoadWebAuthnCredentials(xctx, limit, page); err != nil {
+		// This stage runs while the table is still at the version 24 column shape, so it can't use the current
+		// LoadWebAuthnCredentials select which includes columns added by later migrations.
+		if err = conn.SelectContext(xctx, &credentials, provider.sqlSelectWebAuthnCredentialsForMigration24, limit, page); err != nil {
+			return fmt.Errorf("failed to verify credentials: %w", err)
+		}
+
+		if err = provider.decryptWebAuthnCredentials(credentials); err != nil {
 			return fmt.Errorf("failed to verify credentials: %w", err)
 		}
 

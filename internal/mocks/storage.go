@@ -1441,6 +1441,20 @@ func (mr *MockStorageMockRecorder) UpdateWebAuthnCredentialDescription(ctx, user
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWebAuthnCredentialDescription", reflect.TypeOf((*MockStorage)(nil).UpdateWebAuthnCredentialDescription), ctx, username, credentialID, description)
 }
 
+// UpdateWebAuthnCredentialProvisioner mocks base method.
+func (m *MockStorage) UpdateWebAuthnCredentialProvisioner(ctx context.Context, credentialID int, provisioner string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateWebAuthnCredentialProvisioner", ctx, credentialID, provisioner)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateWebAuthnCredentialProvisioner indicates an expected call of UpdateWebAuthnCredentialProvisioner.
+func (mr *MockStorageMockRecorder) UpdateWebAuthnCredentialProvisioner(ctx, credentialID, provisioner any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWebAuthnCredentialProvisioner", reflect.TypeOf((*MockStorage)(nil).UpdateWebAuthnCredentialProvisioner), ctx, credentialID, provisioner)
+}
+
 // UpdateWebAuthnCredentialSignIn mocks base method.
 func (m *MockStorage) UpdateWebAuthnCredentialSignIn(ctx context.Context, credential model.WebAuthnCredential) error {
 	m.ctrl.T.Helper()

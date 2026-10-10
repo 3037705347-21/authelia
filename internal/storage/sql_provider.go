@@ -118,10 +118,12 @@ func NewSQLProvider(config *schema.Configuration, name, driverName, dataSourceNa
 
 		sqlInsertWebAuthnCredential:                           fmt.Sprintf(queryFmtInsertWebAuthnCredential, tableWebAuthnCredentials),
 		sqlSelectWebAuthnCredentials:                          fmt.Sprintf(queryFmtSelectWebAuthnCredentials, tableWebAuthnCredentials),
+		sqlSelectWebAuthnCredentialsForMigration24:            fmt.Sprintf(queryFmtSelectWebAuthnCredentialsForMigration24, tableWebAuthnCredentials),
 		sqlSelectWebAuthnCredentialsByUsername:                fmt.Sprintf(queryFmtSelectWebAuthnCredentialsByUsername, tableWebAuthnCredentials),
 		sqlSelectWebAuthnCredentialsByRPIDByUsername:          fmt.Sprintf(queryFmtSelectWebAuthnCredentialsByRPIDByUsername, tableWebAuthnCredentials),
 		sqlSelectWebAuthnCredentialByID:                       fmt.Sprintf(queryFmtSelectWebAuthnCredentialByID, tableWebAuthnCredentials),
 		sqlUpdateWebAuthnCredentialDescriptionByUsernameAndID: fmt.Sprintf(queryFmtUpdateUpdateWebAuthnCredentialDescriptionByUsernameAndID, tableWebAuthnCredentials),
+		sqlUpdateWebAuthnCredentialProvisionerByID:            fmt.Sprintf(queryFmtUpdateWebAuthnCredentialProvisionerByID, tableWebAuthnCredentials),
 		sqlUpdateWebAuthnCredentialRecordSignIn:               fmt.Sprintf(queryFmtUpdateWebAuthnCredentialRecordSignIn, tableWebAuthnCredentials),
 		sqlDeleteWebAuthnCredential:                           fmt.Sprintf(queryFmtDeleteWebAuthnCredential, tableWebAuthnCredentials),
 		sqlDeleteWebAuthnCredentialByUsername:                 fmt.Sprintf(queryFmtDeleteWebAuthnCredentialByUsername, tableWebAuthnCredentials),
@@ -290,11 +292,13 @@ type SQLProvider struct {
 	// Table: webauthn_credentials.
 	sqlInsertWebAuthnCredential                  string
 	sqlSelectWebAuthnCredentials                 string
+	sqlSelectWebAuthnCredentialsForMigration24   string
 	sqlSelectWebAuthnCredentialsByUsername       string
 	sqlSelectWebAuthnCredentialsByRPIDByUsername string
 	sqlSelectWebAuthnCredentialByID              string
 
 	sqlUpdateWebAuthnCredentialDescriptionByUsernameAndID string
+	sqlUpdateWebAuthnCredentialProvisionerByID            string
 	sqlUpdateWebAuthnCredentialRecordSignIn               string
 
 	sqlDeleteWebAuthnCredential                         string
@@ -758,7 +762,7 @@ func (p *SQLProvider) SaveWebAuthnCredential(ctx context.Context, credential mod
 	}
 
 	if _, err = p.conn(ctx).ExecContext(ctx, p.sqlInsertWebAuthnCredential,
-		credential.CreatedAt, credential.LastUsedAt, credential.RPID, credential.Username, credential.Description,
+		credential.CreatedAt, credential.LastUsedAt, credential.RPID, credential.Username, credential.Description, credential.Provisioner,
 		credential.KID, credential.AAGUID, credential.AttestationType, credential.AttestationFormat, credential.Attachment, credential.Transport,
 		credential.SignCount, credential.CloneWarning, credential.Legacy, credential.Discoverable, credential.Present, credential.Verified,
 		credential.BackupEligible, credential.BackupState, credential.PublicKey, credential.Attestation,
@@ -774,6 +778,16 @@ func (p *SQLProvider) SaveWebAuthnCredential(ctx context.Context, credential mod
 func (p *SQLProvider) UpdateWebAuthnCredentialDescription(ctx context.Context, username string, credentialID int, description string) (err error) {
 	if _, err = p.conn(ctx).ExecContext(ctx, p.sqlUpdateWebAuthnCredentialDescriptionByUsernameAndID, description, username, credentialID); err != nil {
 		return fmt.Errorf("error updating WebAuthn credential description to '%s' for credential id '%d': %w", description, credentialID, err)
+	}
+
+	return nil
+}
+
+// UpdateWebAuthnCredentialProvisioner updates a registered WebAuthn credential in the storage provider changing the
+// provisioner that manages the credential.
+func (p *SQLProvider) UpdateWebAuthnCredentialProvisioner(ctx context.Context, credentialID int, provisioner string) (err error) {
+	if _, err = p.conn(ctx).ExecContext(ctx, p.sqlUpdateWebAuthnCredentialProvisionerByID, provisioner, credentialID); err != nil {
+		return fmt.Errorf("error updating WebAuthn credential provisioner to '%s' for credential id '%d': %w", provisioner, credentialID, err)
 	}
 
 	return nil
@@ -844,19 +858,28 @@ func (p *SQLProvider) LoadWebAuthnCredentials(ctx context.Context, limit, page i
 		return nil, fmt.Errorf("error selecting WebAuthn credentials: %w", err)
 	}
 
+	if err = p.decryptWebAuthnCredentials(credentials); err != nil {
+		return nil, err
+	}
+
+	return credentials, nil
+}
+
+// decryptWebAuthnCredentials decrypts the public key and attestation of the given credentials in place.
+func (p *SQLProvider) decryptWebAuthnCredentials(credentials []model.WebAuthnCredential) (err error) {
 	for i, credential := range credentials {
 		if credentials[i].PublicKey, err = utils.Decrypt(credential.PublicKey, p.aad.GetIssuer(tableWebAuthnCredentials, "public_key", credential.KID.String(), credential.RPID), p.keys.encryption); err != nil {
-			return nil, fmt.Errorf("error decrypting WebAuthn credential public key of credential with id '%d' for user '%s': %w", credential.ID, credential.Username, err)
+			return fmt.Errorf("error decrypting WebAuthn credential public key of credential with id '%d' for user '%s': %w", credential.ID, credential.Username, err)
 		}
 
 		if len(credential.Attestation) != 0 {
 			if credentials[i].Attestation, err = utils.Decrypt(credential.Attestation, p.aad.GetIssuer(tableWebAuthnCredentials, "attestation", credential.KID.String(), credential.RPID), p.keys.encryption); err != nil {
-				return nil, fmt.Errorf("error decrypting WebAuthn credential attestation of credential with id '%d' for user '%s': %w", credential.ID, credential.Username, err)
+				return fmt.Errorf("error decrypting WebAuthn credential attestation of credential with id '%d' for user '%s': %w", credential.ID, credential.Username, err)
 			}
 		}
 	}
 
-	return credentials, nil
+	return nil
 }
 
 // LoadWebAuthnCredentialByID loads a WebAuthn credential registration from the storage provider for a given id.

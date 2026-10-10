@@ -406,6 +406,74 @@ func TestSQLProviderWebAuthn(t *testing.T) {
 	})
 }
 
+func TestSQLProviderWebAuthnCredentialProvisioner(t *testing.T) {
+	provider := newTestSQLiteProvider(t)
+	require.NoError(t, provider.StartupCheck())
+
+	ctx := context.Background()
+
+	managed := model.WebAuthnCredential{
+		CreatedAt:       time.Now().Truncate(time.Second),
+		RPID:            "example.com",
+		Username:        "alice",
+		Description:     "managed-key",
+		Provisioner:     "hardware-roster",
+		KID:             model.NewBase64([]byte("kid-managed")),
+		AttestationType: "none",
+		Attachment:      "cross-platform",
+		PublicKey:       []byte("fake-public-key"),
+	}
+
+	require.NoError(t, provider.SaveWebAuthnCredential(ctx, managed))
+
+	selfRegistered := model.WebAuthnCredential{
+		CreatedAt:       time.Now().Truncate(time.Second),
+		RPID:            "example.com",
+		Username:        "alice",
+		Description:     "my-passkey",
+		KID:             model.NewBase64([]byte("kid-passkey")),
+		AttestationType: "none",
+		Attachment:      "platform",
+		PublicKey:       []byte("fake-public-key"),
+	}
+
+	require.NoError(t, provider.SaveWebAuthnCredential(ctx, selfRegistered))
+
+	credentials, err := provider.LoadWebAuthnCredentialsByUsername(ctx, "example.com", "alice")
+	require.NoError(t, err)
+	require.Len(t, credentials, 2)
+
+	provisioners := map[string]string{}
+
+	for _, credential := range credentials {
+		provisioners[credential.KID.String()] = credential.Provisioner
+	}
+
+	assert.Equal(t, "hardware-roster", provisioners[model.NewBase64([]byte("kid-managed")).String()])
+	assert.Equal(t, "", provisioners[model.NewBase64([]byte("kid-passkey")).String()])
+
+	t.Run("ShouldUpdateCredentialProvisioner", func(t *testing.T) {
+		loaded, err := provider.LoadWebAuthnCredentialsByUsername(ctx, "example.com", "alice")
+		require.NoError(t, err)
+
+		var passkeyID int
+
+		for _, credential := range loaded {
+			if credential.KID.String() == model.NewBase64([]byte("kid-passkey")).String() {
+				passkeyID = credential.ID
+			}
+		}
+
+		require.NotZero(t, passkeyID)
+
+		require.NoError(t, provider.UpdateWebAuthnCredentialProvisioner(ctx, passkeyID, "hardware-roster"))
+
+		updated, err := provider.LoadWebAuthnCredentialByID(ctx, passkeyID)
+		require.NoError(t, err)
+		assert.Equal(t, "hardware-roster", updated.Provisioner)
+	})
+}
+
 func TestUpdateWebAuthnCredentialSignInRebindsCiphertext(t *testing.T) {
 	provider := newTestSQLiteProvider(t)
 	require.NoError(t, provider.StartupCheck())

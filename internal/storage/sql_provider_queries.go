@@ -185,30 +185,43 @@ const (
 //nolint:gosec // The following queries are not hard coded credentials.
 const (
 	queryFmtSelectWebAuthnCredentials = `
-		SELECT id, created_at, last_used_at, rpid, username, description, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
-		FROM %s
-		LIMIT ?
-		OFFSET ?;`
+	SELECT id, created_at, last_used_at, rpid, username, description, provisioner, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
+	FROM %s
+	LIMIT ?
+	OFFSET ?;`
+
+	// queryFmtSelectWebAuthnCredentialsForMigration24 matches the column shape of the table at version 24 and is used
+	// by the version 24 special migration which runs before later migrations have added their columns.
+	queryFmtSelectWebAuthnCredentialsForMigration24 = `
+	SELECT id, created_at, last_used_at, rpid, username, description, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
+	FROM %s
+	LIMIT ?
+	OFFSET ?;`
 
 	queryFmtSelectWebAuthnCredentialsByUsername = `
-		SELECT id, created_at, last_used_at, rpid, username, description, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
-		FROM %s
-		WHERE username = ? AND (? = FALSE OR discoverable = TRUE);`
+	SELECT id, created_at, last_used_at, rpid, username, description, provisioner, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
+	FROM %s
+	WHERE username = ? AND (? = FALSE OR discoverable = TRUE);`
 
 	queryFmtSelectWebAuthnCredentialsByRPIDByUsername = `
-		SELECT id, created_at, last_used_at, rpid, username, description, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
-		FROM %s
-		WHERE rpid = ? AND username = ? AND (? = FALSE OR discoverable = TRUE);`
+	SELECT id, created_at, last_used_at, rpid, username, description, provisioner, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
+	FROM %s
+	WHERE rpid = ? AND username = ? AND (? = FALSE OR discoverable = TRUE);`
 
 	queryFmtSelectWebAuthnCredentialByID = `
-		SELECT id, created_at, last_used_at, rpid, username, description, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
-		FROM %s
-		WHERE id = ?;`
+	SELECT id, created_at, last_used_at, rpid, username, description, provisioner, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation
+	FROM %s
+	WHERE id = ?;`
 
 	queryFmtUpdateUpdateWebAuthnCredentialDescriptionByUsernameAndID = `
-		UPDATE %s
-		SET description = ?
-		WHERE username = ? AND id = ?;`
+	UPDATE %s
+	SET description = ?
+	WHERE username = ? AND id = ?;`
+
+	queryFmtUpdateWebAuthnCredentialProvisionerByID = `
+	UPDATE %s
+	SET provisioner = ?
+	WHERE id = ?;`
 
 	queryFmtUpdateWebAuthnCredentialRecordSignIn = `
 		UPDATE %s
@@ -219,8 +232,8 @@ const (
 		WHERE id = ?;`
 
 	queryFmtInsertWebAuthnCredential = `
-		INSERT INTO %s (created_at, last_used_at, rpid, username, description, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	INSERT INTO %s (created_at, last_used_at, rpid, username, description, provisioner, kid, aaguid, attestation_type, attestation_format, attachment, transport, sign_count, clone_warning, legacy, discoverable, present, verified, backup_eligible, backup_state, public_key, attestation)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
 
 	queryFmtDeleteWebAuthnCredential = `
 		DELETE FROM %s

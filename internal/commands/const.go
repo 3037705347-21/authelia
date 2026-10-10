@@ -347,6 +347,22 @@ authelia storage user webauthn import --file authelia.export.webauthn.yml
 authelia storage user webauthn import --file authelia.export.webauthn.yml --config config.yml
 authelia storage user webauthn import --file authelia.export.webauthn.yml --encryption-key b3453fde-ecc2-4a1f-9422-2707ddbed495 --postgres.address tcp://postgres:5432 --postgres.password autheliapw`
 
+	cmdAutheliaStorageUserWebAuthnReconcileShort = "Reconcile WebAuthn credentials from a roster"
+
+	cmdAutheliaStorageUserWebAuthnReconcileLong = `Reconcile WebAuthn credentials from a roster.
+
+This subcommand converges the WebAuthn credentials managed by the roster provisioner to match the roster file:
+credentials listed in the roster are added, updated, or adopted, credentials previously provisioned by the same
+provisioner but absent from the roster are revoked, and self-registered credentials or credentials managed by another
+provisioner are left untouched. The entire roster is validated before any changes are made, the operation is safe to
+re-run with the same file, and a re-run after an interruption resumes from the current state. The format is determined
+by the extension of the file; '.toml' is read as TOML, '.json' as JSON, and anything else as YAML.`
+
+	cmdAutheliaStorageUserWebAuthnReconcileExample = `authelia storage user webauthn reconcile authelia.roster.webauthn.yml
+authelia storage user webauthn reconcile authelia.roster.webauthn.yml --dry-run
+authelia storage user webauthn reconcile authelia.roster.webauthn.yml --config config.yml
+authelia storage user webauthn reconcile authelia.roster.webauthn.yml --encryption-key b3453fde-ecc2-4a1f-9422-2707ddbed495 --postgres.address tcp://postgres:5432 --postgres.password autheliapw`
+
 	cmdAutheliaStorageUserWebAuthnExportShort = "Perform exports of the WebAuthn credentials"
 
 	cmdAutheliaStorageUserWebAuthnExportLong = `Perform exports of the WebAuthn credentials.
@@ -881,6 +897,7 @@ const (
 	cmdFlagNamePath        = "path"
 	cmdFlagNameTarget      = "target"
 	cmdFlagNameDestroyData = "destroy-data"
+	cmdFlagNameDryRun      = "dry-run"
 
 	cmdFlagNameEncryptionKey      = "encryption-key"
 	cmdFlagNameSQLite3Path        = "sqlite.path"

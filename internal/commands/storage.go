@@ -527,7 +527,25 @@ func newStorageUserWebAuthnCmd(ctx *CmdCtx) (cmd *cobra.Command) {
 		newStorageUserWebAuthnDeleteCmd(ctx),
 		newStorageUserWebAuthnExportCmd(ctx),
 		newStorageUserWebAuthnImportCmd(ctx),
+		newStorageUserWebAuthnReconcileCmd(ctx),
 	)
+
+	return cmd
+}
+
+func newStorageUserWebAuthnReconcileCmd(ctx *CmdCtx) (cmd *cobra.Command) {
+	cmd = &cobra.Command{
+		Use:     "reconcile <filename>",
+		Short:   cmdAutheliaStorageUserWebAuthnReconcileShort,
+		Long:    cmdAutheliaStorageUserWebAuthnReconcileLong,
+		Example: cmdAutheliaStorageUserWebAuthnReconcileExample,
+		RunE:    ctx.StorageUserWebAuthnReconcileRunE,
+		Args:    cobra.ExactArgs(1),
+
+		DisableAutoGenTag: true,
+	}
+
+	cmd.Flags().Bool(cmdFlagNameDryRun, false, "computes and prints the reconciliation plan without making any changes")
 
 	return cmd
 }

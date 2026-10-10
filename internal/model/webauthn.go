@@ -144,6 +144,7 @@ type WebAuthnCredential struct {
 	RPID              string        `db:"rpid"`
 	Username          string        `db:"username"`
 	Description       string        `db:"description"`
+	Provisioner       string        `db:"provisioner"`
 	KID               Base64        `db:"kid"`
 	AAGUID            uuid.NullUUID `db:"aaguid"`
 	AttestationType   string        `db:"attestation_type"`
@@ -266,6 +267,7 @@ func (c *WebAuthnCredential) ToData() WebAuthnCredentialData {
 		RPID:              c.RPID,
 		Username:          c.Username,
 		Description:       c.Description,
+		Provisioner:       c.Provisioner,
 		KID:               c.KID.String(),
 		AAGUID:            c.DataValueAAGUID(),
 		AttestationType:   c.AttestationType,
@@ -340,6 +342,7 @@ func (c *WebAuthnCredential) UnmarshalYAML(value *yaml.Node) (err error) {
 	c.RPID = o.RPID
 	c.Username = o.Username
 	c.Description = o.Description
+	c.Provisioner = o.Provisioner
 	c.AttestationType = o.AttestationType
 	c.AttestationFormat = o.AttestationFormat
 	c.Attachment = o.Attachment
@@ -368,6 +371,7 @@ type WebAuthnCredentialData struct {
 	RPID              string     `yaml:"rpid" toml:"rpid" json:"rpid" jsonschema:"title=Relying Party ID" jsonschema_description:"The Relying Party ID used to register this credential."`
 	Username          string     `yaml:"username" toml:"username" json:"username" jsonschema:"title=Username" jsonschema_description:"The username of the user this credential belongs to."`
 	Description       string     `yaml:"description" toml:"description" json:"description" jsonschema:"title=Description" jsonschema_description:"The user description of this credential."`
+	Provisioner       string     `yaml:"provisioner,omitempty" toml:"provisioner,omitempty" json:"provisioner,omitempty" jsonschema:"title=Provisioner" jsonschema_description:"The provisioner that manages this credential, credentials without a provisioner were self-registered and are not reconciled."`
 	KID               string     `yaml:"kid" toml:"kid" json:"kid" jsonschema:"title=Public Key ID" jsonschema_description:"The Public Key ID of this credential."`
 	AAGUID            *string    `yaml:"aaguid,omitempty" toml:"aaguid,omitempty" json:"aaguid,omitempty" jsonschema:"title=AAGUID" jsonschema_description:"The Authenticator Attestation Global Unique Identifier of this credential."`
 	AttestationType   string     `yaml:"attestation_type" toml:"attestation_type" json:"attestation_type" jsonschema:"title=Attestation Type" jsonschema_description:"The attestation type this credential uses."`
@@ -393,6 +397,7 @@ func (c *WebAuthnCredentialData) ToCredential() (credential *WebAuthnCredential,
 		RPID:              c.RPID,
 		Username:          c.Username,
 		Description:       c.Description,
+		Provisioner:       c.Provisioner,
 		AttestationType:   c.AttestationType,
 		AttestationFormat: c.AttestationFormat,
 		Attachment:        c.Attachment,
@@ -491,4 +496,42 @@ func (export WebAuthnCredentialDataExport) ToExport() (data WebAuthnCredentialEx
 	}
 
 	return data, nil
+}
+
+// WebAuthnCredentialRoster represents a WebAuthn credential provisioning roster file. The roster is the source of
+// truth for the credentials managed by the named Provisioner: credentials listed are reconciled into the database,
+// credentials previously provisioned by this Provisioner but absent from the roster are revoked, and credentials
+// without a provisioner or with a different provisioner are left untouched.
+type WebAuthnCredentialRoster struct {
+	Provisioner         string                     `yaml:"provisioner" toml:"provisioner" json:"provisioner" jsonschema:"title=Provisioner" jsonschema_description:"The identifier of the provisioner this roster reconciles for."`
+	RPID                string                     `yaml:"rpid,omitempty" toml:"rpid,omitempty" json:"rpid,omitempty" jsonschema:"title=Relying Party ID" jsonschema_description:"The default Relying Party ID for credentials which do not specify one."`
+	WebAuthnCredentials []WebAuthnCredentialData   `yaml:"webauthn_credentials" toml:"webauthn_credentials" json:"webauthn_credentials" jsonschema:"title=WebAuthn Credentials" jsonschema_description:"The list of WebAuthn credentials this roster converges to."`
+}
+
+// ToExport converts this roster into a WebAuthnCredentialExport, applying the default RPID and assigning the
+// Provisioner to every credential which does not explicitly specify one.
+func (roster WebAuthnCredentialRoster) ToExport() (export WebAuthnCredentialExport, err error) {
+	export = WebAuthnCredentialExport{
+		WebAuthnCredentials: make([]WebAuthnCredential, len(roster.WebAuthnCredentials)),
+	}
+
+	for i, data := range roster.WebAuthnCredentials {
+		if len(data.RPID) == 0 {
+			data.RPID = roster.RPID
+		}
+
+		if len(data.Provisioner) == 0 {
+			data.Provisioner = roster.Provisioner
+		}
+
+		var credential *WebAuthnCredential
+
+		if credential, err = data.ToCredential(); err != nil {
+			return WebAuthnCredentialExport{}, fmt.Errorf("error occurred parsing webauthn credential %d: %w", i, err)
+		}
+
+		export.WebAuthnCredentials[i] = *credential
+	}
+
+	return export, nil
 }

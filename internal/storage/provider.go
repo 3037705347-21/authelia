@@ -109,6 +109,10 @@ type Provider interface {
 	// description.
 	UpdateWebAuthnCredentialDescription(ctx context.Context, username string, credentialID int, description string) (err error)
 
+	// UpdateWebAuthnCredentialProvisioner updates a registered WebAuthn credential in the storage provider changing the
+	// provisioner that manages the credential.
+	UpdateWebAuthnCredentialProvisioner(ctx context.Context, credentialID int, provisioner string) (err error)
+
 	// UpdateWebAuthnCredentialSignIn updates a registered WebAuthn credential in the storage provider changing the
 	// information that should be changed in the event of a successful sign in.
 	UpdateWebAuthnCredentialSignIn(ctx context.Context, credential model.WebAuthnCredential) (err error)

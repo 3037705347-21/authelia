@@ -7,6 +7,7 @@ package model_test
 import (
 	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 	"time"
@@ -754,4 +755,66 @@ func MustRead(n int) []byte {
 	}
 
 	return data
+}
+
+func TestWebAuthnCredentialDataProvisionerRoundtrip(t *testing.T) {
+	credential := model.WebAuthnCredential{
+		RPID:            "example.com",
+		Username:        "alice",
+		Description:     "hardware-key",
+		Provisioner:     "hardware-roster",
+		KID:             model.NewBase64([]byte("kid-1")),
+		AttestationType: "none",
+		PublicKey:       []byte("fake-public-key"),
+	}
+
+	data := credential.ToData()
+
+	assert.Equal(t, "hardware-roster", data.Provisioner)
+
+	encoded, err := yaml.Marshal(data)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(encoded), "provisioner: hardware-roster")
+
+	decoded := model.WebAuthnCredential{}
+
+	require.NoError(t, yaml.Unmarshal(encoded, &decoded))
+	assert.Equal(t, "hardware-roster", decoded.Provisioner)
+
+	restored, err := data.ToCredential()
+	require.NoError(t, err)
+	assert.Equal(t, "hardware-roster", restored.Provisioner)
+}
+
+func TestWebAuthnCredentialRosterToExport(t *testing.T) {
+	rosterYAML := `
+provisioner: hardware-roster
+rpid: example.com
+webauthn_credentials:
+  - username: alice
+    description: key-a
+    kid: ` + model.NewBase64([]byte("kid-a")).String() + `
+    public_key: ` + base64.StdEncoding.EncodeToString([]byte("public-key-a")) + `
+  - username: bob
+    rpid: auth.example.org
+    description: key-b
+    kid: ` + model.NewBase64([]byte("kid-b")).String() + `
+    public_key: ` + base64.StdEncoding.EncodeToString([]byte("public-key-b")) + `
+`
+
+	roster := model.WebAuthnCredentialRoster{}
+
+	require.NoError(t, yaml.Unmarshal([]byte(rosterYAML), &roster))
+
+	export, err := roster.ToExport()
+	require.NoError(t, err)
+	require.Len(t, export.WebAuthnCredentials, 2)
+
+	assert.Equal(t, "example.com", export.WebAuthnCredentials[0].RPID)
+	assert.Equal(t, "auth.example.org", export.WebAuthnCredentials[1].RPID)
+
+	for _, credential := range export.WebAuthnCredentials {
+		assert.Equal(t, "hardware-roster", credential.Provisioner)
+	}
 }
